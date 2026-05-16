@@ -23,14 +23,14 @@ async def create_api_key():
     if "error" in result:
         raise HTTPException(status_code=500, detail=result["error"])
     return result
-
 @router.post("/chat")
 async def process_chat(request: ChatRequest, creds: HTTPAuthorizationCredentials = Security(security)):
     """The locked AI proxy route. Requires a valid ARKA Bearer Token."""
     api_key = creds.credentials
-    is_valid = await arka_engine.validate_api_key(api_key)
     
-    if not is_valid:
+    # 1. Check the key and grab its database row object
+    key_record = await arka_engine.validate_api_key(api_key)
+    if not key_record:
         raise HTTPException(status_code=401, detail="Invalid or unauthorized ARKA API Key")
 
     extracted_text = request.prompt
@@ -41,7 +41,10 @@ async def process_chat(request: ChatRequest, creds: HTTPAuthorizationCredentials
         raise HTTPException(status_code=400, detail="No prompt or messages provided in payload")
 
     user_id = "test_developer"
+    
+    # Pass key_record["id"] directly down into your pipeline
     result = await arka_engine.route_request(
+        api_key_id=key_record["id"],
         user_id=user_id,
         prompt=extracted_text, 
         requested_model=request.model

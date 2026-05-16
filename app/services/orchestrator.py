@@ -63,10 +63,10 @@ class ARKAOrchestrator:
                     
         return {"api_key": arka_key}
     
-    async def validate_api_key(self, api_key: str) -> bool:
-        """Checks if the provided API key exists and is active in Supabase"""
+    async def validate_api_key(self, api_key: str) -> Any:
+        """Checks if the provided API key exists and is active. Returns key data or None."""
         if not self.supabase_url or not self.supabase_key:
-            return False 
+            return None 
 
         async with httpx.AsyncClient() as client:
             try:
@@ -79,10 +79,10 @@ class ARKAOrchestrator:
                 )
                 response.raise_for_status()
                 data = response.json()
-                return len(data) > 0 
+                return data[0] if len(data) > 0 else None
             except Exception as e:
                 print(f"Auth check failed: {e}")
-                return False
+                return None
 
     async def log_request(self, model: str, provider: str, prompt_tokens: int, completion_tokens: int, cost: float):
         """Saves the log PERMANENTLY via direct REST API with fallback fields"""
@@ -143,7 +143,37 @@ class ARKAOrchestrator:
         else:
             return "openrouter"
 
-    async def route_request(self, user_id: str, prompt: str, requested_model: str = "llama-3.1-8b-instant"):
+    async def log_request(self, api_key_id: int, model: str, provider: str, prompt_tokens: int, completion_tokens: int, cost: float):
+        """Saves the log PERMANENTLY via direct REST API attached to the API Key ID"""
+        log_entry = {
+            "api_key_id": api_key_id, # Link it back to your schema!
+            "model_used": model,
+            "provider": provider,
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_cost": cost
+        }
+        
+        self.current_spend += cost
+
+        if self.supabase_url and self.supabase_key:
+            async with httpx.AsyncClient() as client:
+                try:
+                    response = await client.post(
+                        f"{self.supabase_url}/rest/v1/{self.table_name}",
+                        headers={
+                            "apikey": self.supabase_key,
+                            "Authorization": f"Bearer {self.supabase_key}",
+                            "Content-Type": "application/json",
+                            "Prefer": "return=minimal"
+                        },
+                        json=log_entry
+                    )
+                    response.raise_for_status()
+                except Exception as e:
+                    print(f"Supabase Cloud Sync Error: {e}")
+
+    async def route_request(self, api_key_id: int, user_id: str, prompt: str, requested_model: str = "llama-3.1-8b-instant"):
         if self.current_spend >= self.spend_caps.get(user_id, 10.00):
             return {"error": "Budget exceeded. Request blocked by ARKA Guardrail."}
 
@@ -177,7 +207,8 @@ class ARKAOrchestrator:
         c_tokens = usage.get("completion_tokens", 0)
         simulated_retail_cost = (p_tokens * 0.000001) + (c_tokens * 0.000002)
 
-        await self.log_request(requested_model, provider_name, p_tokens, c_tokens, simulated_retail_cost)
+        # Pass the key ID forward to the log system
+        await self.log_request(api_key_id, requested_model, provider_name, p_tokens, c_tokens, simulated_retail_cost)
         
         return {
             "answer": ai_data["choices"][0]["message"]["content"],
