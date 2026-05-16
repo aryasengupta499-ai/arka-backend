@@ -33,11 +33,9 @@ class ARKAOrchestrator:
 
     async def generate_api_key(self):
         """Generates a secure ARKA API key and saves it to your existing schema"""
-        # 1. Generate the secure key
         raw_key = secrets.token_urlsafe(32)
         arka_key = f"arka_live_{raw_key}"
         
-        # 2. Save it directly to the cloud database using YOUR column names
         if self.supabase_url and self.supabase_key:
             async with httpx.AsyncClient() as client:
                 try:
@@ -69,7 +67,6 @@ class ARKAOrchestrator:
 
         async with httpx.AsyncClient() as client:
             try:
-                # Ask Supabase if this exact key exists and is_active = True
                 response = await client.get(
                     f"{self.supabase_url}/rest/v1/api_keys?key_value=eq.{api_key}&is_active=eq.true",
                     headers={
@@ -79,30 +76,30 @@ class ARKAOrchestrator:
                 )
                 response.raise_for_status()
                 data = response.json()
-                
-                # If the list is not empty, the key is real!
                 return len(data) > 0 
             except Exception as e:
                 print(f"Auth check failed: {e}")
                 return False
 
     async def log_request(self, model: str, provider: str, prompt_tokens: int, completion_tokens: int, cost: float):
-        """Saves the log PERMANENTLY via direct REST API"""
+        """Saves the log PERMANENTLY via direct REST API with adaptive fallback fields"""
+        
+        # Double-mapping cost keys to safeguard against Supabase column name variations
         log_entry = {
             "model_used": model,
             "provider": provider,
             "prompt_tokens": prompt_tokens,
             "completion_tokens": completion_tokens,
-            "retail_value_saved": cost 
+            "retail_value_saved": cost,
+            "total_cost": cost  # Adaptive fallback column
         }
         
         self.current_spend += cost
 
-        # Zero-Dependency Push to Cloud
         if self.supabase_url and self.supabase_key:
             async with httpx.AsyncClient() as client:
                 try:
-                    await client.post(
+                    response = await client.post(
                         f"{self.supabase_url}/rest/v1/telemetry_logs",
                         headers={
                             "apikey": self.supabase_key,
@@ -112,6 +109,8 @@ class ARKAOrchestrator:
                         },
                         json=log_entry
                     )
+                    # Force raise to surface database format mismatches in the Render logs
+                    response.raise_for_status()
                 except Exception as e:
                     print(f"Supabase Cloud Sync Error: {e}")
 
@@ -164,7 +163,6 @@ class ARKAOrchestrator:
                     },
                     json={
                         "model": requested_model,
-                        # This line perfectly handles the Groq payload format!
                         "messages": [{"role": "user", "content": prompt}]
                     },
                     timeout=30.0
@@ -179,7 +177,7 @@ class ARKAOrchestrator:
         c_tokens = usage.get("completion_tokens", 0)
         simulated_retail_cost = (p_tokens * 0.000001) + (c_tokens * 0.000002)
 
-        # Log the transaction directly to the cloud database
+        # Log the transaction down to Supabase
         await self.log_request(requested_model, provider_name, p_tokens, c_tokens, simulated_retail_cost)
         
         return {
