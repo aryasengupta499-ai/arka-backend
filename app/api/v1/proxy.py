@@ -7,13 +7,11 @@ from app.services.orchestrator import arka_engine
 router = APIRouter()
 security = HTTPBearer()
 
-# --- UPDATED SCHEMAS: Flexible enough to handle any incoming format ---
 class Message(BaseModel):
     role: str
     content: str
 
 class ChatRequest(BaseModel):
-    # Now accepts EITHER a prompt string OR a messages array without crashing
     prompt: Optional[str] = None
     messages: Optional[List[Message]] = None
     model: str = "llama-3.1-8b-instant" 
@@ -29,15 +27,12 @@ async def create_api_key():
 @router.post("/chat")
 async def process_chat(request: ChatRequest, creds: HTTPAuthorizationCredentials = Security(security)):
     """The locked AI proxy route. Requires a valid ARKA Bearer Token."""
-    
-    # 1. The Bouncer: Check the key
     api_key = creds.credentials
     is_valid = await arka_engine.validate_api_key(api_key)
     
     if not is_valid:
         raise HTTPException(status_code=401, detail="Invalid or unauthorized ARKA API Key")
 
-    # 2. Extract the text safely regardless of frontend payload shape
     extracted_text = request.prompt
     if request.messages and len(request.messages) > 0:
         extracted_text = request.messages[-1].content
@@ -45,10 +40,7 @@ async def process_chat(request: ChatRequest, creds: HTTPAuthorizationCredentials
     if not extracted_text:
         raise HTTPException(status_code=400, detail="No prompt or messages provided in payload")
 
-    # 3. Proceed with the intercept
     user_id = "test_developer"
-
-    # Pass the safely extracted string downward to your orchestrator
     result = await arka_engine.route_request(
         user_id=user_id,
         prompt=extracted_text, 

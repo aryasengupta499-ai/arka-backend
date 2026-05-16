@@ -12,6 +12,9 @@ class ARKAOrchestrator:
         self.supabase_url = os.getenv("SUPABASE_URL", "")
         self.supabase_key = os.getenv("SUPABASE_KEY", "")
         
+        # CHANGE THIS STRING to match your exact Supabase table name (e.g., "telemetry_logs" or "telemetry_log")
+        self.table_name = "YOUR_SUPABASE_TABLE_NAME"
+        
         self.providers = {
             "groq": {
                 "base_url": "https://api.groq.com/openai/v1/chat/completions",
@@ -61,7 +64,7 @@ class ARKAOrchestrator:
         return {"api_key": arka_key}
     
     async def validate_api_key(self, api_key: str) -> bool:
-        """The Bouncer: Checks if the provided API key exists and is active in Supabase"""
+        """Checks if the provided API key exists and is active in Supabase"""
         if not self.supabase_url or not self.supabase_key:
             return False 
 
@@ -82,16 +85,14 @@ class ARKAOrchestrator:
                 return False
 
     async def log_request(self, model: str, provider: str, prompt_tokens: int, completion_tokens: int, cost: float):
-        """Saves the log PERMANENTLY via direct REST API with adaptive fallback fields"""
-        
-        # Double-mapping cost keys to safeguard against Supabase column name variations
+        """Saves the log PERMANENTLY via direct REST API with fallback fields"""
         log_entry = {
             "model_used": model,
             "provider": provider,
             "prompt_tokens": prompt_tokens,
             "completion_tokens": completion_tokens,
             "retail_value_saved": cost,
-            "total_cost": cost  # Adaptive fallback column
+            "total_cost": cost
         }
         
         self.current_spend += cost
@@ -100,7 +101,7 @@ class ARKAOrchestrator:
             async with httpx.AsyncClient() as client:
                 try:
                     response = await client.post(
-                        f"{self.supabase_url}/rest/v1/telemetry_logs",
+                        f"{self.supabase_url}/rest/v1/{self.table_name}",
                         headers={
                             "apikey": self.supabase_key,
                             "Authorization": f"Bearer {self.supabase_key}",
@@ -109,7 +110,6 @@ class ARKAOrchestrator:
                         },
                         json=log_entry
                     )
-                    # Force raise to surface database format mismatches in the Render logs
                     response.raise_for_status()
                 except Exception as e:
                     print(f"Supabase Cloud Sync Error: {e}")
@@ -120,7 +120,7 @@ class ARKAOrchestrator:
             async with httpx.AsyncClient() as client:
                 try:
                     response = await client.get(
-                        f"{self.supabase_url}/rest/v1/telemetry_logs?select=*&order=created_at.desc&limit=50",
+                        f"{self.supabase_url}/rest/v1/{self.table_name}?select=*&order=created_at.desc&limit=50",
                         headers={
                             "apikey": self.supabase_key,
                             "Authorization": f"Bearer {self.supabase_key}"
@@ -177,7 +177,6 @@ class ARKAOrchestrator:
         c_tokens = usage.get("completion_tokens", 0)
         simulated_retail_cost = (p_tokens * 0.000001) + (c_tokens * 0.000002)
 
-        # Log the transaction down to Supabase
         await self.log_request(requested_model, provider_name, p_tokens, c_tokens, simulated_retail_cost)
         
         return {
