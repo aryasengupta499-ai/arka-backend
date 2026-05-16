@@ -23,16 +23,18 @@ async def create_api_key():
     if "error" in result:
         raise HTTPException(status_code=500, detail=result["error"])
     return result
+
 @router.post("/chat")
 async def process_chat(request: ChatRequest, creds: HTTPAuthorizationCredentials = Security(security)):
     """The locked AI proxy route. Requires a valid ARKA Bearer Token."""
     api_key = creds.credentials
     
-    # 1. Check the key and grab its database row object
+    # 1. The Bouncer: Extract key record data out of validation lookup
     key_record = await arka_engine.validate_api_key(api_key)
     if not key_record:
         raise HTTPException(status_code=401, detail="Invalid or unauthorized ARKA API Key")
 
+    # 2. Extract incoming text payload safely
     extracted_text = request.prompt
     if request.messages and len(request.messages) > 0:
         extracted_text = request.messages[-1].content
@@ -42,7 +44,7 @@ async def process_chat(request: ChatRequest, creds: HTTPAuthorizationCredentials
 
     user_id = "test_developer"
     
-    # Pass key_record["id"] directly down into your pipeline
+    # 3. Route downward passing the key_record ID along
     result = await arka_engine.route_request(
         api_key_id=key_record["id"],
         user_id=user_id,
@@ -56,6 +58,6 @@ async def process_chat(request: ChatRequest, creds: HTTPAuthorizationCredentials
     return result
 
 @router.get("/logs")
-async def request_logs():
+async def get_telemetry_logs():
     """Fetches the FinOps ledger from Supabase for the dashboard"""
     return await arka_engine.fetch_logs()

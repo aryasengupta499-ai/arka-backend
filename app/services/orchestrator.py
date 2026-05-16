@@ -12,7 +12,7 @@ class ARKAOrchestrator:
         self.supabase_url = os.getenv("SUPABASE_URL", "")
         self.supabase_key = os.getenv("SUPABASE_KEY", "")
         
-       # Change this from "telemetry_logs" to "request_logs"
+        # Mapped perfectly to your live database setup
         self.table_name = "request_logs"
         
         self.providers = {
@@ -64,7 +64,7 @@ class ARKAOrchestrator:
         return {"api_key": arka_key}
     
     async def validate_api_key(self, api_key: str) -> Any:
-        """Checks if the provided API key exists and is active. Returns key data or None."""
+        """The Bouncer: Checks if the API key exists and returns its complete row dictionary"""
         if not self.supabase_url or not self.supabase_key:
             return None 
 
@@ -84,15 +84,15 @@ class ARKAOrchestrator:
                 print(f"Auth check failed: {e}")
                 return None
 
-    async def log_request(self, model: str, provider: str, prompt_tokens: int, completion_tokens: int, cost: float):
-        """Saves the log PERMANENTLY via direct REST API with fallback fields"""
+    async def log_request(self, api_key_id: int, model: str, provider: str, prompt_tokens: int, completion_tokens: int, cost: float):
+        """Saves the log PERMANENTLY via direct REST API using required schema columns"""
         log_entry = {
+            "api_key_id": api_key_id,  # Mandatory relational foreign key
             "model_used": model,
             "provider": provider,
             "prompt_tokens": prompt_tokens,
             "completion_tokens": completion_tokens,
-            "retail_value_saved": cost,
-            "total_cost": cost
+            "total_cost": cost          # Matches your database column name exactly
         }
         
         self.current_spend += cost
@@ -143,36 +143,6 @@ class ARKAOrchestrator:
         else:
             return "openrouter"
 
-    async def log_request(self, api_key_id: int, model: str, provider: str, prompt_tokens: int, completion_tokens: int, cost: float):
-        """Saves the log PERMANENTLY via direct REST API attached to the API Key ID"""
-        log_entry = {
-            "api_key_id": api_key_id, # Link it back to your schema!
-            "model_used": model,
-            "provider": provider,
-            "prompt_tokens": prompt_tokens,
-            "completion_tokens": completion_tokens,
-            "total_cost": cost
-        }
-        
-        self.current_spend += cost
-
-        if self.supabase_url and self.supabase_key:
-            async with httpx.AsyncClient() as client:
-                try:
-                    response = await client.post(
-                        f"{self.supabase_url}/rest/v1/{self.table_name}",
-                        headers={
-                            "apikey": self.supabase_key,
-                            "Authorization": f"Bearer {self.supabase_key}",
-                            "Content-Type": "application/json",
-                            "Prefer": "return=minimal"
-                        },
-                        json=log_entry
-                    )
-                    response.raise_for_status()
-                except Exception as e:
-                    print(f"Supabase Cloud Sync Error: {e}")
-
     async def route_request(self, api_key_id: int, user_id: str, prompt: str, requested_model: str = "llama-3.1-8b-instant"):
         if self.current_spend >= self.spend_caps.get(user_id, 10.00):
             return {"error": "Budget exceeded. Request blocked by ARKA Guardrail."}
@@ -207,7 +177,7 @@ class ARKAOrchestrator:
         c_tokens = usage.get("completion_tokens", 0)
         simulated_retail_cost = (p_tokens * 0.000001) + (c_tokens * 0.000002)
 
-        # Pass the key ID forward to the log system
+        # Send transaction to database linked with the originating token ID
         await self.log_request(api_key_id, requested_model, provider_name, p_tokens, c_tokens, simulated_retail_cost)
         
         return {
