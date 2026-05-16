@@ -5,25 +5,19 @@ from app.core.config import settings
 
 app = FastAPI(title=settings.PROJECT_NAME)
 
-# --- THE VIP LIST ---
-# This acts as the final shield. Only these URLs can talk to your backend.
-origins = [
-    "http://localhost:3000",       # For when you test the UI on your laptop
-    "http://127.0.0.1:3000",       # Alternate local React port
-    "https://your-vercel-app-url.vercel.app" # <--- REPLACE WITH YOUR EXACT VERCEL LINK
-]
-
-# --- ADD CORS MIDDLEWARE ---
+# --- GLOBAL CORS ALLOWANCE ---
+# This guarantees that your Vercel frontend can bypass all browser security checks
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,  # Locked down to only the VIP list!
+    allow_origins=["*"],  # Opens the door completely for testing your deployment
     allow_credentials=True,
     allow_methods=["*"],  
     allow_headers=["*"],  
 )
 
-# Only loading the Proxy router
-app.include_router(proxy_router, prefix=settings.API_V1_STR, tags=["Proxy"])
+# --- REMOVED THE PREFIX ---
+# Now your endpoints live at /logs, /chat, and /generate-key perfectly matching your UI
+app.include_router(proxy_router, prefix="", tags=["Proxy"])
 
 @app.get("/")
 async def root():
