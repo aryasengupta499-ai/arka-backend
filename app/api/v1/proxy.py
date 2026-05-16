@@ -56,6 +56,6 @@ async def process_chat(request: ChatRequest, creds: HTTPAuthorizationCredentials
     return result
 
 @router.get("/logs")
-async def get_telemetry_logs():
+async def request_logs():
     """Fetches the FinOps ledger from Supabase for the dashboard"""
     return await arka_engine.fetch_logs()
