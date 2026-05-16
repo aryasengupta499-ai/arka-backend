@@ -13,7 +13,8 @@ class ARKAOrchestrator:
         self.supabase_key = os.getenv("SUPABASE_KEY", "")
         
         # CHANGE THIS STRING to match your exact Supabase table name (e.g., "telemetry_logs" or "telemetry_log")
-        self.table_name = "YOUR_SUPABASE_TABLE_NAME"
+        # Change this from "YOUR_SUPABASE_TABLE_NAME" to "telemetry_logs"
+        self.table_name = "telemetry_logs"
         
         self.providers = {
             "groq": {
