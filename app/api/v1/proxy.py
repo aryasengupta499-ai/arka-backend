@@ -1,15 +1,21 @@
 from fastapi import APIRouter, HTTPException, Depends, Security
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
+from typing import List, Optional
 from app.services.orchestrator import arka_engine
 
 router = APIRouter()
-
-# This activates the little "Padlock" icon in your Swagger UI!
 security = HTTPBearer()
 
+# --- UPDATED SCHEMAS: Flexible enough to handle any incoming format ---
+class Message(BaseModel):
+    role: str
+    content: str
+
 class ChatRequest(BaseModel):
-    prompt: str
+    # Now accepts EITHER a prompt string OR a messages array without crashing
+    prompt: Optional[str] = None
+    messages: Optional[List[Message]] = None
     model: str = "llama-3.1-8b-instant" 
 
 @router.post("/generate-key")
@@ -31,12 +37,21 @@ async def process_chat(request: ChatRequest, creds: HTTPAuthorizationCredentials
     if not is_valid:
         raise HTTPException(status_code=401, detail="Invalid or unauthorized ARKA API Key")
 
-    # 2. If the key is valid, proceed with the intercept
+    # 2. Extract the text safely regardless of frontend payload shape
+    extracted_text = request.prompt
+    if request.messages and len(request.messages) > 0:
+        extracted_text = request.messages[-1].content
+
+    if not extracted_text:
+        raise HTTPException(status_code=400, detail="No prompt or messages provided in payload")
+
+    # 3. Proceed with the intercept
     user_id = "test_developer"
 
+    # Pass the safely extracted string downward to your orchestrator
     result = await arka_engine.route_request(
         user_id=user_id,
-        prompt=request.prompt,
+        prompt=extracted_text, 
         requested_model=request.model
     )
 

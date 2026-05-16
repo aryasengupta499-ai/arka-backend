@@ -164,6 +164,7 @@ class ARKAOrchestrator:
                     },
                     json={
                         "model": requested_model,
+                        # This line perfectly handles the Groq payload format!
                         "messages": [{"role": "user", "content": prompt}]
                     },
                     timeout=30.0
