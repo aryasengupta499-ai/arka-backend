@@ -89,7 +89,7 @@ class ARKAOrchestrator:
         log_entry = {
             "api_key_id": api_key_id,  # Mandatory relational foreign key
             "model_used": model,
-            "provider": provider,
+            # Note: 'provider' is intentionally omitted here to match your Supabase schema
             "prompt_tokens": prompt_tokens,
             "completion_tokens": completion_tokens,
             "total_cost": cost          # Matches your database column name exactly
