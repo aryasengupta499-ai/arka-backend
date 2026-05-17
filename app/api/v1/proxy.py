@@ -16,6 +16,11 @@ class ChatRequest(BaseModel):
     messages: Optional[List[Message]] = None
     model: str = "llama-3.1-8b-instant" 
 
+# Added the Waitlist data model
+class WaitlistRequest(BaseModel):
+    email: str
+    tier: str
+
 @router.post("/generate-key")
 async def create_api_key():
     """Endpoint for the frontend 'Generate API Key' button"""
@@ -61,3 +66,12 @@ async def process_chat(request: ChatRequest, creds: HTTPAuthorizationCredentials
 async def get_telemetry_logs():
     """Fetches the FinOps ledger from Supabase for the dashboard"""
     return await arka_engine.fetch_logs()
+
+# Added the new Waitlist Endpoint
+@router.post("/waitlist")
+async def join_waitlist(request: WaitlistRequest):
+    """Saves email leads securely to Supabase"""
+    result = await arka_engine.join_waitlist(request.email, request.tier)
+    if "error" in result:
+        raise HTTPException(status_code=500, detail=result["error"])
+    return {"message": "Successfully joined the waitlist"}

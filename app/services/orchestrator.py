@@ -188,4 +188,31 @@ class ARKAOrchestrator:
             "retail_value_saved": simulated_retail_cost
         }
 
+    # Added the join_waitlist function
+    async def join_waitlist(self, email: str, tier: str):
+        """Pushes a new beta lead directly into the Supabase CRM"""
+        if not self.supabase_url or not self.supabase_key:
+            return {"error": "Database credentials missing"}
+
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.post(
+                    f"{self.supabase_url}/rest/v1/waitlist",
+                    headers={
+                        "apikey": self.supabase_key,
+                        "Authorization": f"Bearer {self.supabase_key}",
+                        "Content-Type": "application/json",
+                        "Prefer": "return=minimal"
+                    },
+                    json={
+                        "email": email,
+                        "tier": tier
+                    }
+                )
+                response.raise_for_status()
+                return {"success": True}
+            except Exception as e:
+                print(f"Waitlist Cloud Sync Error: {e}")
+                return {"error": "Failed to save to database"}
+
 arka_engine = ARKAOrchestrator()
