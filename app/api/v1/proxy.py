@@ -16,7 +16,6 @@ class ChatRequest(BaseModel):
     messages: Optional[List[Message]] = None
     model: str = "llama-3.1-8b-instant" 
 
-# Added the Waitlist data model
 class WaitlistRequest(BaseModel):
     email: str
     tier: str
@@ -34,7 +33,7 @@ async def process_chat(request: ChatRequest, creds: HTTPAuthorizationCredentials
     """The locked AI proxy route. Requires a valid ARKA Bearer Token."""
     api_key = creds.credentials
     
-    # 1. The Bouncer: Extract key record data out of validation lookup
+    # 1. The Bouncer: Extract the full key record (including tier and request_count)
     key_record = await arka_engine.validate_api_key(api_key)
     if not key_record:
         raise HTTPException(status_code=401, detail="Invalid or unauthorized ARKA API Key")
@@ -47,18 +46,15 @@ async def process_chat(request: ChatRequest, creds: HTTPAuthorizationCredentials
     if not extracted_text:
         raise HTTPException(status_code=400, detail="No prompt or messages provided in payload")
 
-    user_id = "test_developer"
-    
-    # 3. Route downward passing the key_record ID along
+    # 3. Route downward passing the ENTIRE key record to enforce plan limits
     result = await arka_engine.route_request(
-        api_key_id=key_record["id"],
-        user_id=user_id,
+        key_record=key_record,
         prompt=extracted_text, 
         requested_model=request.model
     )
 
     if "error" in result:
-        raise HTTPException(status_code=400, detail=result["error"])
+        raise HTTPException(status_code=402, detail=result["error"]) # 402 Payment Required!
 
     return result
 
@@ -67,7 +63,6 @@ async def get_telemetry_logs():
     """Fetches the FinOps ledger from Supabase for the dashboard"""
     return await arka_engine.fetch_logs()
 
-# Added the new Waitlist Endpoint
 @router.post("/waitlist")
 async def join_waitlist(request: WaitlistRequest):
     """Saves email leads securely to Supabase"""
