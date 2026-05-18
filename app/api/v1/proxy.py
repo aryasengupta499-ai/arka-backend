@@ -1,9 +1,13 @@
-from fastapi import APIRouter, HTTPException, Depends, Security
+from fastapi import APIRouter, HTTPException, Depends, Security, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from typing import List, Optional
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from app.services.orchestrator import arka_engine
 
+# Initialize the rate limiter using the client's IP address
+limiter = Limiter(key_func=get_remote_address)
 router = APIRouter()
 security = HTTPBearer()
 
@@ -21,7 +25,8 @@ class WaitlistRequest(BaseModel):
     tier: str
 
 @router.post("/generate-key")
-async def create_api_key():
+@limiter.limit("5/minute") # Protects against spam key generation
+async def create_api_key(request: Request):
     """Endpoint for the frontend 'Generate API Key' button"""
     result = await arka_engine.generate_api_key()
     if "error" in result:
@@ -29,7 +34,8 @@ async def create_api_key():
     return result
 
 @router.post("/chat")
-async def process_chat(request: ChatRequest, creds: HTTPAuthorizationCredentials = Security(security)):
+@limiter.limit("60/minute") # Protects the proxy endpoint from DDoS
+async def process_chat(request: Request, chat_payload: ChatRequest, creds: HTTPAuthorizationCredentials = Security(security)):
     """The locked AI proxy route. Requires a valid ARKA Bearer Token."""
     api_key = creds.credentials
     
@@ -39,9 +45,9 @@ async def process_chat(request: ChatRequest, creds: HTTPAuthorizationCredentials
         raise HTTPException(status_code=401, detail="Invalid or unauthorized ARKA API Key")
 
     # 2. Extract incoming text payload safely
-    extracted_text = request.prompt
-    if request.messages and len(request.messages) > 0:
-        extracted_text = request.messages[-1].content
+    extracted_text = chat_payload.prompt
+    if chat_payload.messages and len(chat_payload.messages) > 0:
+        extracted_text = chat_payload.messages[-1].content
 
     if not extracted_text:
         raise HTTPException(status_code=400, detail="No prompt or messages provided in payload")
@@ -50,7 +56,7 @@ async def process_chat(request: ChatRequest, creds: HTTPAuthorizationCredentials
     result = await arka_engine.route_request(
         key_record=key_record,
         prompt=extracted_text, 
-        requested_model=request.model
+        requested_model=chat_payload.model
     )
 
     if "error" in result:
@@ -64,9 +70,10 @@ async def get_telemetry_logs():
     return await arka_engine.fetch_logs()
 
 @router.post("/waitlist")
-async def join_waitlist(request: WaitlistRequest):
+@limiter.limit("10/minute") # Protects your waitlist database from spam
+async def join_waitlist(request: Request, waitlist_payload: WaitlistRequest):
     """Saves email leads securely to Supabase"""
-    result = await arka_engine.join_waitlist(request.email, request.tier)
+    result = await arka_engine.join_waitlist(waitlist_payload.email, waitlist_payload.tier)
     if "error" in result:
         raise HTTPException(status_code=500, detail=result["error"])
     return {"message": "Successfully joined the waitlist"}
