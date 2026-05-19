@@ -80,14 +80,16 @@ class ARKAOrchestrator:
                 print(f"Auth check failed: {e}")
                 return None
 
-    async def log_request(self, api_key_id: int, current_count: int, model: str, prompt_tokens: int, completion_tokens: int, cost: float):
+    # NEW: Added tenant_id parameter
+    async def log_request(self, api_key_id: int, current_count: int, model: str, prompt_tokens: int, completion_tokens: int, cost: float, tenant_id: str):
         """Saves the log PERMANENTLY and increments the API Key usage counter"""
         log_entry = {
             "api_key_id": api_key_id, 
             "model_used": model,
             "prompt_tokens": prompt_tokens,
             "completion_tokens": completion_tokens,
-            "total_cost": cost 
+            "total_cost": cost,
+            "tenant_id": tenant_id  # NEW: Added to payload
         }
 
         if self.supabase_url and self.supabase_key:
@@ -149,7 +151,8 @@ class ARKAOrchestrator:
         else:
             return "openrouter"
 
-    async def route_request(self, key_record: dict, prompt: str, requested_model: str = "llama-3.1-8b-instant"):
+    # NEW: Added tenant_id parameter defaulting to "anonymous"
+    async def route_request(self, key_record: dict, prompt: str, requested_model: str = "llama-3.1-8b-instant", tenant_id: str = "anonymous"):
         
         # --- THE TIER GUARDRAIL ---
         tier = key_record.get("tier", "Hobby")
@@ -199,8 +202,8 @@ class ARKAOrchestrator:
         c_tokens = usage.get("completion_tokens", 0)
         simulated_retail_cost = (p_tokens * 0.000001) + (c_tokens * 0.000002)
 
-        # Send transaction to database and pass current count so it can increment
-        await self.log_request(key_record["id"], current_count, requested_model, p_tokens, c_tokens, simulated_retail_cost)
+        # NEW: Send transaction to database, passing down the tenant_id
+        await self.log_request(key_record["id"], current_count, requested_model, p_tokens, c_tokens, simulated_retail_cost, tenant_id)
         
         return {
             "answer": ai_data["choices"][0]["message"]["content"],

@@ -39,6 +39,9 @@ async def process_chat(request: Request, chat_payload: ChatRequest, creds: HTTPA
     """The locked AI proxy route. Requires a valid ARKA Bearer Token."""
     api_key = creds.credentials
     
+    # NEW: Extract the tenant ID from headers (default to 'anonymous' if missing)
+    tenant_id = request.headers.get("x-arka-tenant-id", "anonymous")
+    
     # 1. The Bouncer: Extract the full key record (including tier and request_count)
     key_record = await arka_engine.validate_api_key(api_key)
     if not key_record:
@@ -52,11 +55,12 @@ async def process_chat(request: Request, chat_payload: ChatRequest, creds: HTTPA
     if not extracted_text:
         raise HTTPException(status_code=400, detail="No prompt or messages provided in payload")
 
-    # 3. Route downward passing the ENTIRE key record to enforce plan limits
+    # 3. Route downward passing the ENTIRE key record and the NEW tenant_id
     result = await arka_engine.route_request(
         key_record=key_record,
         prompt=extracted_text, 
-        requested_model=chat_payload.model
+        requested_model=chat_payload.model,
+        tenant_id=tenant_id
     )
 
     if "error" in result:
